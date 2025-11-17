@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# Function to print a warning message
+warning() {
+  echo "Warning: $1"
+}
+
+# Function to print an error message and exit with status 1
+error() {
+  echo "Error: $1"
+  exit 1
+}
+
+# Help message
+show_help() {
+  echo "Usage: $0 [-h|--help]"
+  echo ""
+  echo "Options:"
+  echo "  -h, --help          Show this help message"
+  exit 0
+}
+
+# Read the configuration file
+config_file="$HOME/.config/nextstep"
+
+# Check if the config file exists
+if [ ! -f "$config_file" ]; then
+  error "Configuration file not found at $config_file"
+fi
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      ;;
+    *)
+      echo "Unknown option: $1"
+      show_help
+      ;;
+  esac
+done
+
+# Loop through each file path listed in the config file
+selection="$(while IFS= read -r file_path; do
+  # Check if the file exists before processing it
+  if [ -f "$file_path" ]; then
+    # Read each line of the file and look for the first occurrence of "TODO"
+    line_number=0
+    while IFS= read -r line; do
+      let line_number=line_number+1
+      if [[ "$line" == TODO\ * ]]; then
+        # Print the file name and the TODO line
+        task="${line#TODO }"
+        echo "$file_path:$task:$line_number"
+        break  # Exit the loop after the first TODO is found
+      fi
+    done < "$file_path"
+  else
+    warning "File not found: $file_path"
+  fi
+done < "$config_file" | fzy)"
+
+# Quit if no selection
+[ $? -eq 0 ] || exit 0
+
+IFS=':' read -r file_path task line_number <<< "$selection"
+
+vim +$line_number "$file_path" 
