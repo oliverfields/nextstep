@@ -23,9 +23,6 @@ show_help() {
 }
 
 config_file="$HOME/.config/nextstep"
-#Work out how many lines fzy should show
-fzy_lines="$(echo "--lines=$(( $(tput lines) -2 ))")"
-echo $fzy_lines
 list_type="next_steps"
 
 # ---- Parse command-line arguments ----
@@ -149,7 +146,7 @@ while IFS= read -r file_path; do
   else
     warning "File not found: $file_path"
   fi
-done < "$config_file" | fzy $(echo "--lines=$(( $(tput lines) -2 ))"))"
+done < "$config_file" | fzy --lines=$(($(tput lines)-2)) )"
 
 [ $? -eq 0 ] || exit 0
 
