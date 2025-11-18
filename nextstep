@@ -93,7 +93,7 @@ while [[ $# -gt 0 ]]; do
       fi
 
       # Remove the entry
-      grep -Fxv "$untrack_path" "$config_file" > "$config_file.tmp"
+      grep -Fxv "$untrack_path" "$config_file" > "$config_file.tmp" &&
       mv "$config_file.tmp" "$config_file"
 
       #echo "Removed: $untrack_path"
