@@ -23,6 +23,10 @@ show_help() {
 }
 
 config_file="$HOME/.config/nextstep"
+#Work out how many lines fzy should show
+fzy_lines="$(echo "--lines=$(( $(tput lines) -2 ))")"
+echo $fzy_lines
+list_type="next_steps"
 
 # ---- Parse command-line arguments ----
 while [[ $# -gt 0 ]]; do
@@ -30,7 +34,9 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       show_help
       ;;
-
+    -l|--list)
+      list_type="files"
+      ;;
     # ---------------- TRACK ----------------
     -t|--track)
       shift
@@ -60,7 +66,7 @@ while [[ $# -gt 0 ]]; do
       fi
 
       echo "$track_path" >> "$config_file"
-      echo "Added: $track_path"
+      #echo "Added: $track_path"
       exit 0
       ;;
 
@@ -93,7 +99,7 @@ while [[ $# -gt 0 ]]; do
       grep -Fxv "$untrack_path" "$config_file" > "$config_file.tmp"
       mv "$config_file.tmp" "$config_file"
 
-      echo "Removed: $untrack_path"
+      #echo "Removed: $untrack_path"
       exit 0
       ;;
 
@@ -111,40 +117,49 @@ if [ ! -f "$config_file" ]; then
   error "Configuration file not found at $config_file"
 fi
 
-TODO WORKFLOW CONFIG
+# Get next step id string
+next_step_prefix="$(grep '^next_step=' "$config_file")"
+next_step_prefix="${next_step_prefix#next_step=}"
+[ "$next_step_prefix" = "" ] && next_step_prefix=TODO
 
-workflow_config="$(grep '^workflow=' "$config_file")"
-IFS=',' read -ra workflow <<< "$workflow_config"
+selection="$(
 
-echo "${workflow[@]}"
-
-selection="$(while IFS= read -r file_path; do
+while IFS= read -r file_path; do
   # skip workflow setting
-  if [[ "$file_path" == workflow=* ]]; then continue; fi
+  if [[ "$file_path" == next_step=* ]]; then continue; fi
 
   if [ -f "$file_path" ]; then
-    line_number=0
-    while IFS= read -r line; do
-      let line_number=line_number+1
-      if [[ "$line" == TODO\ * ]]; then
-        task="${line#TODO }"
-        [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
 
-        # Print the file path (blue), task (bold white), and line number (cyan)
-        echo -e "$file_path_display:$task:$line_number"
-        break
-      fi
-    done < "$file_path"
+    if [ "$list_type" = "next_steps" ]; then
+      line_number=0
+      while IFS= read -r line; do
+        let line_number=line_number+1
+        if [[ "$line" == TODO\ * ]]; then
+          task="${line#TODO }"
+          [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
+
+          # Print the file path (blue), task (bold white), and line number (cyan)
+          echo -e "$file_path_display:$line_number:$task"
+          break
+        fi
+      done < "$file_path"
+    else
+      echo "$file_path"
+    fi
   else
     warning "File not found: $file_path"
   fi
-done < "$config_file" | fzy)"
+done < "$config_file" | fzy $(echo "--lines=$(( $(tput lines) -2 ))"))"
 
 [ $? -eq 0 ] || exit 0
 
-IFS=':' read -r file_path task line_number <<< "$selection"
+IFS=':' read -r file_path line_number task <<< "$selection"
 
 [[ "$file_path" =~ ^~ ]] && file_path="$HOME${file_path#?}"
 
-vim +$line_number "$file_path"
+if [ "$line_number" != "" ]; then
+  vim +$line_number "$file_path"
+else
+  vim "$file_path"
+fi
 

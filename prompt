@@ -1,7 +1,0 @@
-I want a bash script that does the following:
-- reads a specific configuration file, lets say ~/.config/nextstep
-- the config is a list of file paths, one per line
-- the script accepts the following arguments:
-  - -h|--help -> Help msg
-  - -a|--assignee <string> -> filters out all output that does not contain <string>
-- on run the script loops over the files in the config and returns all lines that start with 'TODO' in the format: <file name>:<line>

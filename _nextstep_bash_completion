@@ -1,0 +1,45 @@
+# Bash completion for nextstep script
+
+# _nextstep_complete is a function that handles completion for the script
+_nextstep_complete() {
+    local current prev
+
+    # Get the current word and previous word
+    current="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Completion for options (-t, -u, --help)
+    if [[ "${current}" == -* ]]; then
+        COMPREPLY=($(compgen -W "-h --help -t --track -u --untrack -l --list" -- "${current}"))
+        return 0
+    fi
+
+    # Completion for paths for -t|--track and -u|--untrack
+    if [[ "${prev}" == "-t" || "${prev}" == "--track" || "${prev}" == "-u" || "${prev}" == "--untrack" ]]; then
+        # Get the list of file completions (absolute paths)
+        local paths
+        paths=($(compgen -f -- "${current}"))
+
+        # Prepare the completions array
+        COMPREPLY=()
+        for path in "${paths[@]}"; do
+            if [[ -d "$path" && "${path}" != */ ]]; then
+                # Append a slash to directories, but only if it's not already there
+                COMPREPLY+=("${path}/")
+            else
+                COMPREPLY+=("${path}")
+            fi
+        done
+
+        # Avoid appending a space after the slash
+        if [[ "${#COMPREPLY[@]}" -gt 0 ]]; then
+            COMPREPLY=("${COMPREPLY[@]}")
+        fi
+
+        return 0
+    fi
+}
+
+# Register the completion function for your script
+complete -o nospace -F _nextstep_complete nextstep
+
