@@ -136,7 +136,7 @@ while IFS= read -r file_path; do
           [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
 
           # Print the file path (blue), task (bold white), and line number (cyan)
-          echo -e "$file_path_display:$line_number:$task"
+          echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
           break
         fi
       done < "$file_path"
@@ -148,7 +148,11 @@ while IFS= read -r file_path; do
   fi
 done < "$config_file" | fzy --lines=$(($(tput lines)-2)) )"
 
-[ $? -eq 0 ] || exit 0
+
+[ "$selection" = "" ] && exit 0
+
+#strips out any escape codes/colors
+selection="$(echo $selection | sed 's/\x1b\[[0-9;]*m//g')"
 
 IFS=':' read -r file_path line_number task <<< "$selection"
 
