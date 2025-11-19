@@ -5,11 +5,13 @@ warning() {
   echo -e "\033[33mWarning: $1\033[0m"
 }
 
+
 # Function to print an error message and exit with status 1 (Red)
 error() {
   echo -e "\033[31mError: $1\033[0m"
   exit 1
 }
+
 
 # Help message
 show_help() {
@@ -26,6 +28,72 @@ show_help() {
   echo ""
   exit 0
 }
+
+
+safe_commit() {
+    # Safely commits and pushes a task file in a git repo
+    # - Commits only the task file
+    # - Works safely on any checked-out branch
+    # - Checks the remote version of the same branch
+    # - Halts on staged changes, merge conflicts, or remote changes
+
+    local TASK_FILE="$1"
+
+    if [ -z "$TASK_FILE" ]; then
+        error "safe_commit <task_file>"
+    fi
+
+    # Ensure inside a git repo
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        error "Not inside a git repository"
+    fi
+
+    # Ensure no staged changes on other files
+    local STAGED_OTHERS
+    STAGED_OTHERS=$(git diff --cached --name-only | grep -v "^$TASK_FILE$" || true)
+    if [ -n "$STAGED_OTHERS" ]; then
+        error "Other files are staged. Commit or stash them first:"
+        echo "$STAGED_OTHERS"
+    fi
+
+    # Ensure no staged changes on the task file itself
+    if git diff --cached --name-only | grep -q "^$TASK_FILE$"; then
+        error "Task file $TASK_FILE has staged changes. Please unstage or commit them manually."
+    fi
+
+    # Fetch latest from remote
+    git fetch origin
+
+    # Get the current branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    # Check if the remote task file has changed
+    if ! git diff --quiet "$TASK_FILE" "origin/$current_branch"; then
+        error "Remote task file $TASK_FILE has changes. Please pull and resolve before committing."
+    fi
+
+    # Check for unstaged changes in task file
+    if git diff --quiet "$TASK_FILE"; then
+        return 0
+    fi
+
+    # Check for merge conflicts in task file
+    if git ls-files -u | grep -q "^$TASK_FILE"; then
+        error "$TASK_FILE has merge conflicts. Resolve before committing."
+    fi
+
+    # Stage only the task file
+    git add "$TASK_FILE" || error "Unable to git add $TASK_FILE"
+
+    # Commit the task file
+    git commit -m "Update nextstep file $TASK_FILE" || error "Unable to git commit $TASK_FILE"
+
+    # Push to origin
+    git push || error "Unable to git push $TASK_FILE"
+
+    echo "Task file $TASK_FILE committed and pushed successfully."
+}
+
 
 config_file="$HOME/.config/nextstep"
 file_list=$(sort "$config_file")
@@ -125,11 +193,17 @@ next_step_prefix="$(grep '^next_step=' "$config_file")"
 next_step_prefix="${next_step_prefix#next_step=}"
 [ "$next_step_prefix" = "" ] && next_step_prefix=TODO
 
+# Get next step id string
+git_commit="$(grep '^git_commit=' "$config_file")"
+git_commit="${git_commit#git_commit=}"
+
+[ "$next_step_prefix" = "" ] && next_step_prefix=TODO
 selection="$(
 
 while IFS= read -r file_path; do
-  # skip workflow setting
+  # skip config settings
   if [[ "$file_path" == next_step=* ]]; then continue; fi
+  if [[ "$file_path" == git_commit=* ]]; then continue; fi
 
   if [ -f "$file_path" ]; then
 
@@ -171,3 +245,4 @@ else
   vim "$file_path"
 fi
 
+[ "$git_commit" = "yes" ] && safe_commit "$file_path"
