@@ -13,12 +13,17 @@ error() {
 
 # Help message
 show_help() {
-  echo "Usage: $0 [-h|--help] [-t|--track <path>] [-u|--untrack <path>]"
+  echo "Usage: $0 [-h|--help] [-t|--track <path>] [-u|--untrack <path>] [<path>]"
   echo ""
   echo "Options:"
   echo "  -h, --help               Show this help message"
+  echo "  -l, --list               List tracked nextstep files"
   echo "  -t, --track <path>       Add a file path to the tracker config, create file if not exists"
   echo "  -u, --untrack <path>     Remove a file path from the tracker config"
+  echo ""
+  echo "Example: $ nextstep -> list next step for each tracked file"
+  echo "Example: $ nextstep my_project.nextstep -> list all steps for file"
+  echo ""
   exit 0
 }
 
