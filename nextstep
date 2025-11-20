@@ -138,6 +138,7 @@ while [[ $# -gt 0 ]]; do
 
       echo "$track_path" >> "$config_file"
       #echo "Added: $track_path"
+      vim "$track_path"
       exit 0
       ;;
 
