@@ -45,7 +45,7 @@ safe_commit() {
 
     # Ensure inside a git repo
     if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        error "Not inside a git repository"
+        return
     fi
 
     # Ensure no staged changes on other files
