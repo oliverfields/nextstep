@@ -19,12 +19,11 @@ show_help() {
   echo ""
   echo "Options:"
   echo "  -h, --help               Show this help message"
-  echo "  -l, --list               List tracked nextstep files"
   echo "  -t, --track <path>       Add a file path to the tracker config, create file if not exists"
   echo "  -u, --untrack <path>     Remove a file path from the tracker config"
   echo ""
   echo "Example: $ nextstep -> list next step for each tracked file"
-  echo "Example: $ nextstep my_project.nextstep -> list all steps for file"
+  echo "Example: $ nextstep my_project.nextstep -> open file on next step line"
   echo ""
   exit 0
 }
@@ -105,9 +104,6 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       show_help
       ;;
-    -l|--list)
-      list_type="files"
-      ;;
     # ---------------- TRACK ----------------
     -t|--track)
       shift
@@ -176,7 +172,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      file_list="$1"
+      file_path="$1"
       list_type="file"
       ;;
   esac
@@ -199,51 +195,75 @@ git_commit="$(grep '^git_commit=' "$config_file")"
 git_commit="${git_commit#git_commit=}"
 
 [ "$next_step_prefix" = "" ] && next_step_prefix=TODO
-selection="$(
 
-while IFS= read -r file_path; do
-  # skip config settings
-  if [[ "$file_path" == next_step=* ]]; then continue; fi
-  if [[ "$file_path" == git_commit=* ]]; then continue; fi
 
-  if [ -f "$file_path" ]; then
+if [ "$list_type" = "next_step" ]; then
+  selection="$(
 
-    if [ "$list_type" = "next_step" ] || [ "$list_type" = "file" ]; then
+  while IFS= read -r file_path; do
+    # skip config settings
+    if [[ "$file_path" == next_step=* ]]; then continue; fi
+    if [[ "$file_path" == git_commit=* ]]; then continue; fi
+
+    if [ -f "$file_path" ]; then
+
       line_number=0
-      while IFS= read -r line; do
+      [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
+
+      first_task="$(while IFS= read -r line; do
+
         let line_number=line_number+1
         if [[ "$line" == TODO\ * ]]; then
           task="${line#TODO }"
-          [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
 
           # Print the file path (blue), task (bold white), and line number (cyan)
           echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
-
-          [ "$list_type" = "next_step" ] && break
+          break
         fi
-      done < "$file_path"
+      done < "$file_path")"
     else
-      echo -e "\033[36m$file_path\033[37m"
+      error "File not found: $file_path"
     fi
+
+  if [ "$first_task" = "" ];then
+    echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXT STEP"
   else
-    warning "File not found: $file_path"
+    echo -e "$first_task"
   fi
-done <<< "$file_list" | fzy --lines=$(($(tput lines)-2)) )"
 
+  done <<< "$file_list" | fzy --lines=$(($(tput lines)-2)) )"
 
-[ "$selection" = "" ] && exit 0
+  [ "$selection" = "" ] && exit 0
 
-#strips out any escape codes/colors
-selection="$(echo $selection | sed 's/\x1b\[[0-9;]*m//g')"
+  #strips out any escape codes/colors
+  selection="$(echo $selection | sed 's/\x1b\[[0-9;]*m//g')"
 
-IFS=':' read -r file_path line_number task <<< "$selection"
+  IFS=':' read -r file_path line_number task <<< "$selection"
 
-[[ "$file_path" =~ ^~ ]] && file_path="$HOME${file_path#?}"
+  [[ "$file_path" =~ ^~ ]] && file_path="$HOME${file_path#?}"
 
-if [ "$line_number" != "" ]; then
-  vim +$line_number "$file_path"
-else
-  vim "$file_path"
+  if [ "$line_number" != "" ]; then
+    vim +$line_number "$file_path"
+  else
+    vim "$file_path"
+  fi
 fi
+
+if [ "$list_type" = "file" ]; then
+  if [ -f "$file_path" ]; then
+
+    line_number=0
+    while IFS= read -r line; do
+      let line_number=line_number+1
+      [[ "$line" == TODO\ * ]] && break
+    done < "$file_path"
+
+  else
+    error "File not found: $file_path"
+  fi
+
+  vim +$line_number "$file_path"
+fi
+
 
 [ "$git_commit" = "yes" ] && safe_commit "$file_path"
