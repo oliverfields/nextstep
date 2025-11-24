@@ -1,7 +1,7 @@
 " Automatically set filetype for .nextstep files
 augroup nextstep_filetype
   autocmd!
-  autocmd BufNewFile,BufRead *.nextstep set filetype=nextstep
+  autocmd BufNewFile,BufRead NEXTSTEP set filetype=nextstep
 augroup END
 
 
