@@ -35,13 +35,11 @@ safe_commit() {
     local TASK_FILE="$1"
 
     if [ -z "$TASK_FILE" ]; then
-        error "safe_commit <task_file>"
+        error "usage: safe_commit <task_file>"
     fi
 
     # Ensure inside a git repo
-    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        return
-    fi
+    [ git rev-parse --is-inside-work-tree >/dev/null 2>&1 ] || exit 0
 
     # Ensure no staged changes on other files
     local STAGED_OTHERS
