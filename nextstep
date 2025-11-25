@@ -13,7 +13,7 @@ error() {
 
 # Help message
 show_help() {
-  echo "Usage: $0 [-h|--help] [-t|--track <path>] [-u|--untrack <path>] [<path>]"
+  echo "Usage: $0 [-h|--help] [-t|--track <path>] [-u|--untrack <path>] [-l|--list-tasks] [<path>]"
   echo ""
   echo "NEXTSTEP rule:"
   echo "  Only files whose name is exactly 'NEXTSTEP' are valid."
@@ -22,9 +22,11 @@ show_help() {
   echo "  -h, --help               Show this help message"
   echo "  -t, --track <path>       Track a NEXTSTEP file (name must be exactly NEXTSTEP)"
   echo "  -u, --untrack <path>     Remove a NEXTSTEP file from the tracker"
+  echo "  -l, --list-tasks <path>  List tasks found in <path>"
   echo ""
   echo "Example: $ nextstep -> list next step for each tracked NEXTSTEP file"
   echo "Example: $ nextstep /path/to/NEXTSTEP -> open file on next step line"
+  echo "Example: $ nextstep -l /path/to/NEXTSTEP -> list tasks in file"
   echo ""
   exit 0
 }
@@ -153,7 +155,9 @@ while [[ $# -gt 0 ]]; do
       mv "$config_file.tmp" "$config_file"
       exit 0
       ;;
-
+    -l|--list-steps)
+      list_steps=1
+      ;;
     *)
       file_path="$1"
       list_type="file"
@@ -228,7 +232,46 @@ if [ "$list_type" = "next_step" ]; then
 fi
 
 
-if [ "$list_type" = "file" ]; then
+if [[ "$list_type" = "file" && $list_steps -eq 1 ]]; then
+
+  # ---- enforce filename is exactly NEXTSTEP ----
+  if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
+    "Skipping non-NEXTSTEP file in config: $file_path"
+  fi
+
+  selection="$(
+  line_number=0
+  while IFS= read -r line; do
+    if [[ "$line" == next_step=* ]]; then continue; fi
+    if [[ "$line" == git_commit=* ]]; then continue; fi
+
+    [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
+
+    file_path_display="${file_path_display%/NEXTSTEP}"
+
+    let line_number=line_number+1
+    if [[ "$line" == TODO\ * ]]; then
+      task="${line#TODO }"
+      echo -e "\033[36m$line_number:\033[37m$task"
+    fi
+
+    if [ $line_number -eq 0 ]; then
+      echo -e "\033[36m1:\033[31m⚠️NO NEXT STEP"
+    fi
+
+  done < "$file_path" | fzy --lines=$(($(tput lines)-2)) )"
+
+  [ "$selection" = "" ] && exit 0
+
+  selection="$(echo $selection | sed 's/\x1b\[[0-9;]*m//g')"
+  IFS=':' read -r line_number task <<< "$selection"
+
+  if [ "$line_number" != "" ]; then
+    vim +$line_number "$file_path"
+  else
+    vim "$file_path"
+  fi
+elif [ "$list_type" = "file" ]; then
 
   # ---- enforce filename is exactly NEXTSTEP ----
   if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
