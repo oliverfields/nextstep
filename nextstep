@@ -2,29 +2,31 @@
 
 # Function to print a warning message (Yellow)
 warning() {
-  echo -e "\033[33mWarning: $1\033[0m"
+  echo -e "\033[33mWarning: $1\033[0m" >&2
 }
 
 # Function to print an error message and exit with status 1 (Red)
 error() {
-  echo -e "\033[31mError: $1\033[0m"
+  echo -e "\033[31mError: $1\033[0m" >&2
   exit 1
 }
 
 # Help message
 show_help() {
-  echo "Usage: $0 [-h|--help] [-t|--track <path>] [-u|--untrack <path>] [-l|--list-tasks] [<path>]"
+  echo "Usage: $0 [-e|--edit] [-h|--help] [-t|--track <path>] [-u|--untrack <path>] [-l|--list-steps] [<path>]"
   echo ""
-  echo "NEXTSTEP rule:"
+  echo "NEXTSTEP rules:"
   echo "  Only files whose name is exactly 'NEXTSTEP' are valid."
+  echo "  Ordering is important, both of steps in NEXTSTEP files and paths in tracker file."
   echo ""
   echo "Options:"
+  echo "  -e, --edit               Edit the tracker file"
   echo "  -h, --help               Show this help message"
-  echo "  -t, --track <path>       Track a NEXTSTEP file (name must be exactly NEXTSTEP)"
-  echo "  -u, --untrack <path>     Remove a NEXTSTEP file from the tracker"
-  echo "  -l, --list-tasks <path>  List tasks found in <path>"
+  echo "  -l, --list-steps <path>  List all steps found in <path>"
+  echo "  -t, --track <path>       Add a NEXTSTEP file to tracker file(name must be NEXTSTEP)"
+  echo "  -u, --untrack <path>     Remove a NEXTSTEP file from tracker file"
   echo ""
-  echo "Example: $ nextstep -> list next step for each tracked NEXTSTEP file"
+  echo "Example: $ nextstep -> list next step for each NEXTSTEP file in tracker file"
   echo "Example: $ nextstep /path/to/NEXTSTEP -> open file on next step line"
   echo "Example: $ nextstep -l /path/to/NEXTSTEP -> list tasks in file"
   echo ""
@@ -75,13 +77,23 @@ safe_commit() {
     echo "NEXTSTEP file $TASK_FILE committed and pushed successfully."
 }
 
-config_file="$HOME/.config/nextstep"
-file_list=$(sort "$config_file")
+config_file="$HOME/.config/nextstep/config"
+projects_file="$HOME/.config/nextstep/projects"
+
 list_type="next_step"
 
 # ---- Parse command-line arguments ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -e|--edit)
+      if [ ! -f "$projects_file" ]; then
+        mkdir -p "$(dirname "$projects_file")"
+        touch "$projects_file"
+      fi
+      vim "$projects_file"
+      exit 0
+      ;;
+
     -h|--help)
       show_help
       ;;
@@ -109,15 +121,15 @@ while [[ $# -gt 0 ]]; do
         touch "$track_path" || error "Unable to create: $track_path"
       fi
 
-      mkdir -p "$(dirname "$config_file")"
-      touch "$config_file"
+      mkdir -p "$(dirname "$projects_file")"
+      touch "$projects_file"
 
-      if grep -Fxq "$track_path" "$config_file"; then
+      if grep -Fxq "$track_path" "$projects_file"; then
         warning "Path already tracked: $track_path"
         exit 0
       fi
 
-      echo "$track_path" >> "$config_file"
+      echo "$track_path" >> "$projects_file"
       exit 0
       ;;
 
@@ -139,18 +151,18 @@ while [[ $# -gt 0 ]]; do
         error "Cannot untrack: filename must be exactly 'NEXTSTEP'"
       fi
 
-      if [ ! -f "$config_file" ]; then
-        warning "Configuration file not found at $config_file"
+      if [ ! -f "$projects_file" ]; then
+        warning "Projects file not found at $projects_file"
         exit 0
       fi
 
-      if ! grep -Fxq "$untrack_path" "$config_file"; then
+      if ! grep -Fxq "$untrack_path" "$projects_file"; then
         warning "Path not tracked: $untrack_path"
         exit 0
       fi
 
-      grep -Fxv "$untrack_path" "$config_file" > "$config_file.tmp" &&
-      mv "$config_file.tmp" "$config_file"
+      grep -Fxv "$untrack_path" "$projects_file" > "$projects_file.tmp" &&
+      mv "$projects_file.tmp" "$projects_file"
       exit 0
       ;;
     -l|--list-steps)
@@ -166,8 +178,8 @@ done
 
 # ---- Existing nextstep TODO-scanning logic ----
 
-if [ ! -f "$config_file" ]; then
-  error "Configuration file not found at $config_file"
+if [ ! -f "$projects_file" ]; then
+  error "Projects file not found at $projects_file"
 fi
 
 next_step_prefix="$(grep '^next_step=' "$config_file")"
@@ -180,12 +192,12 @@ git_commit="${git_commit#git_commit=}"
 if [ "$list_type" = "next_step" ]; then
   selection="$(
   while IFS= read -r file_path; do
-    if [[ "$file_path" == next_step=* ]]; then continue; fi
-    if [[ "$file_path" == git_commit=* ]]; then continue; fi
+    [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*$ || "$file_path" =~ ^# ]] && continue
+
 
     # ---- enforce filename is exactly NEXTSTEP ----
     if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
-      warning "Skipping non-NEXTSTEP file in config: $file_path"
+      warning "Skipping non-NEXTSTEP file in projects file: $file_path"
       continue
     fi
 
@@ -213,7 +225,7 @@ if [ "$list_type" = "next_step" ]; then
       echo -e "$first_task"
     fi
 
-  done <<< "$file_list" | fzy --lines=$(($(tput lines)-2)) )"
+  done < "$projects_file" | fzy --lines=$(($(tput lines)-2)) )"
 
   [ "$selection" = "" ] && exit 0
 
@@ -231,26 +243,21 @@ fi
 
 
 if [[ "$list_type" = "file" && $list_steps -eq 1 ]]; then
-
   # ---- enforce filename is exactly NEXTSTEP ----
   if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
-    "Skipping non-NEXTSTEP file in config: $file_path"
+    "File must be called NEXTSTEP"
   fi
 
   selection="$(
   line_number=0
   while IFS= read -r line; do
-    if [[ "$line" == next_step=* ]]; then continue; fi
-    if [[ "$line" == git_commit=* ]]; then continue; fi
-
     [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
 
     file_path_display="${file_path_display%/NEXTSTEP}"
 
     let line_number=line_number+1
     if [[ "$line" == TODO\ * ]]; then
-      task="${line#TODO }"
-      echo -e "\033[36m$line_number:\033[37m$task"
+      echo -e "\033[36m$line_number:\033[37m$line"
     fi
 
     if [ $line_number -eq 0 ]; then
