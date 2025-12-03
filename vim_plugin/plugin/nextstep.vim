@@ -8,7 +8,7 @@ augroup END
 func NextStepReplaceStatus(id, result)
   if a:result != -1
     let new_status = get(g:status_list, a:result-1, '')
-    execute 's/\(TODO\|WAIT\|DONE\|WONT\)/'.new_status.'/'
+    execute 's/\(NEXTSTEP\|BLOCKED\|DONE\|WONT\)/'.new_status.'/'
     echomsg 'Status changed to '.new_status.' for task on line '.line('.')
   endif
 endfunc
@@ -33,7 +33,7 @@ func! NextStepChangeStatus()
 endfunc
 
 
-let g:status_list = [ 'TODO','WAIT','DONE','WONT' ]
+let g:status_list = [ 'NEXTSTEP','BLOCKED','DONE','WONT' ]
 
 " Change Status
 nnoremap cs :call NextStepChangeStatus()<CR>

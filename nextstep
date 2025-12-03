@@ -17,17 +17,17 @@ show_help() {
   echo ""
   echo "NEXTSTEP rules:"
   echo "  Only files whose name is exactly 'NEXTSTEP' are valid."
-  echo "  Ordering is important, both of steps in NEXTSTEP files and paths in tracker file."
+  echo "  Ordering is important, both of steps in NEXTSTEP files and paths in tracking file."
   echo "  A step is a single line of that starts with 'NEXT '"
   echo ""
   echo "Options:"
-  echo "  -e, --edit               Edit the tracker file"
+  echo "  -e, --edit               Edit the tracking file"
   echo "  -h, --help               Show this help message"
   echo "  -l, --list-steps <path>  List all steps found in <path>"
-  echo "  -t, --track <path>       Add a NEXTSTEP file to tracker file(name must be NEXTSTEP)"
-  echo "  -u, --untrack <path>     Remove a NEXTSTEP file from tracker file"
+  echo "  -t, --track <path>       Add a NEXTSTEP file to tracking file(name must be NEXTSTEP)"
+  echo "  -u, --untrack <path>     Remove a NEXTSTEP file from tracking file"
   echo ""
-  echo "Example: $ nextstep -> list next step for each NEXTSTEP file in tracker file"
+  echo "Example: $ nextstep -> list next step for each NEXTSTEP file in tracking file"
   echo "Example: $ nextstep /path/to/NEXTSTEP -> open file on next step line"
   echo "Example: $ nextstep -l /path/to/NEXTSTEP -> list tasks in file"
   echo ""
@@ -79,7 +79,7 @@ safe_commit() {
 }
 
 config_file="$HOME/.config/nextstep/config"
-tracker_file="$HOME/.config/nextstep/tracker"
+tracking_file="$HOME/.config/nextstep/tracking"
 
 list_type="next_step"
 
@@ -87,11 +87,11 @@ list_type="next_step"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -e|--edit)
-      if [ ! -f "$tracker_file" ]; then
-        mkdir -p "$(dirname "$tracker_file")"
-        touch "$tracker_file"
+      if [ ! -f "$tracking_file" ]; then
+        mkdir -p "$(dirname "$tracking_file")"
+        touch "$tracking_file"
       fi
-      vim "$tracker_file"
+      vim "$tracking_file"
       exit 0
       ;;
 
@@ -122,15 +122,15 @@ while [[ $# -gt 0 ]]; do
         touch "$track_path" || error "Unable to create: $track_path"
       fi
 
-      mkdir -p "$(dirname "$tracker_file")"
-      touch "$tracker_file"
+      mkdir -p "$(dirname "$tracking_file")"
+      touch "$tracking_file"
 
-      if grep -Fxq "$track_path" "$tracker_file"; then
+      if grep -Fxq "$track_path" "$tracking_file"; then
         warning "Path already tracked: $track_path"
         exit 0
       fi
 
-      echo "$track_path" >> "$tracker_file"
+      echo "$track_path" >> "$tracking_file"
       exit 0
       ;;
 
@@ -152,18 +152,18 @@ while [[ $# -gt 0 ]]; do
         error "Cannot untrack: filename must be exactly 'NEXTSTEP'"
       fi
 
-      if [ ! -f "$tracker_file" ]; then
-        warning "Projects file not found at $tracker_file"
+      if [ ! -f "$tracking_file" ]; then
+        warning "Projects file not found at $tracking_file"
         exit 0
       fi
 
-      if ! grep -Fxq "$untrack_path" "$tracker_file"; then
+      if ! grep -Fxq "$untrack_path" "$tracking_file"; then
         warning "Path not tracked: $untrack_path"
         exit 0
       fi
 
-      grep -Fxv "$untrack_path" "$tracker_file" > "$tracker_file.tmp" &&
-      mv "$tracker_file.tmp" "$tracker_file"
+      grep -Fxv "$untrack_path" "$tracking_file" > "$tracking_file.tmp" &&
+      mv "$tracking_file.tmp" "$tracking_file"
       exit 0
       ;;
     -l|--list-steps)
@@ -179,8 +179,8 @@ done
 
 # ---- Existing nextstep NEXTSTEP-scanning logic ----
 
-if [ ! -f "$tracker_file" ]; then
-  error "Projects file not found at $tracker_file"
+if [ ! -f "$tracking_file" ]; then
+  error "Projects file not found at $tracking_file"
 fi
 
 git_commit="$(grep '^git_commit=' "$config_file")"
@@ -222,7 +222,7 @@ if [ "$list_type" = "next_step" ]; then
       echo -e "$first_task"
     fi
 
-  done < "$tracker_file" | fzy --lines=$(($(tput lines)-2)) )"
+  done < "$tracking_file" | fzy --lines=$(($(tput lines)-2)) )"
 
   [ "$selection" = "" ] && exit 0
 
