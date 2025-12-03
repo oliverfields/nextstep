@@ -18,6 +18,7 @@ show_help() {
   echo "NEXTSTEP rules:"
   echo "  Only files whose name is exactly 'NEXTSTEP' are valid."
   echo "  Ordering is important, both of steps in NEXTSTEP files and paths in tracker file."
+  echo "  A step is a single line of that starts with 'NEXT '"
   echo ""
   echo "Options:"
   echo "  -e, --edit               Edit the tracker file"
@@ -34,9 +35,9 @@ show_help() {
 }
 
 safe_commit() {
-    local TASK_FILE="$1"
+    local NEXTSTEP_FILE="$1"
 
-    if [ -z "$TASK_FILE" ]; then
+    if [ -z "$NEXTSTEP_FILE" ]; then
         error "usage: safe_commit <task_file>"
     fi
 
@@ -45,36 +46,36 @@ safe_commit() {
 
     # Ensure no staged changes on other files
     local STAGED_OTHERS
-    STAGED_OTHERS=$(git diff --cached --name-only | grep -v "^$TASK_FILE$" || true)
+    STAGED_OTHERS=$(git diff --cached --name-only | grep -v "^$NEXTSTEP_FILE$" || true)
     if [ -n "$STAGED_OTHERS" ]; then
         error "Other files are staged. Commit or stash them first:"
         echo "$STAGED_OTHERS"
     fi
 
     # Ensure no staged changes on the task file itself
-    if git diff --cached --name-only | grep -q "^$TASK_FILE$"; then
-        error "Task file $TASK_FILE has staged changes. Please unstage or commit them manually."
+    if git diff --cached --name-only | grep -q "^$NEXTSTEP_FILE$"; then
+        error "Task file $NEXTSTEP_FILE has staged changes. Please unstage or commit them manually."
     fi
 
     git fetch origin
     current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-    if ! git diff --quiet "$TASK_FILE" "origin/$current_branch"; then
-        error "Remote task file $TASK_FILE has changes. Please pull and resolve before committing."
+    if ! git diff --quiet "$NEXTSTEP_FILE" "origin/$current_branch"; then
+        error "Remote task file $NEXTSTEP_FILE has changes. Please pull and resolve before committing."
     fi
 
-    if git diff --quiet "$TASK_FILE"; then
+    if git diff --quiet "$NEXTSTEP_FILE"; then
         return 0
     fi
 
-    if git ls-files -u | grep -q "^$TASK_FILE"; then
-        error "$TASK_FILE has merge conflicts. Resolve before committing."
+    if git ls-files -u | grep -q "^$NEXTSTEP_FILE"; then
+        error "$NEXTSTEP_FILE has merge conflicts. Resolve before committing."
     fi
 
-    git add "$TASK_FILE" || error "Unable to git add $TASK_FILE"
-    git commit -m "Update NEXTSTEP file $TASK_FILE" || error "Unable to git commit $TASK_FILE"
-    git push || error "Unable to git push $TASK_FILE"
-    echo "NEXTSTEP file $TASK_FILE committed and pushed successfully."
+    git add "$NEXTSTEP_FILE" || error "Unable to git add $NEXTSTEP_FILE"
+    git commit -m "Update NEXTSTEP file $NEXTSTEP_FILE" || error "Unable to git commit $NEXTSTEP_FILE"
+    git push || error "Unable to git push $NEXTSTEP_FILE"
+    echo "NEXTSTEP file $NEXTSTEP_FILE committed and pushed successfully."
 }
 
 config_file="$HOME/.config/nextstep/config"
@@ -176,15 +177,11 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# ---- Existing nextstep TODO-scanning logic ----
+# ---- Existing nextstep NEXTSTEP-scanning logic ----
 
 if [ ! -f "$tracker_file" ]; then
   error "Projects file not found at $tracker_file"
 fi
-
-next_step_prefix="$(grep '^next_step=' "$config_file")"
-next_step_prefix="${next_step_prefix#next_step=}"
-[ "$next_step_prefix" = "" ] && next_step_prefix=TODO
 
 git_commit="$(grep '^git_commit=' "$config_file")"
 git_commit="${git_commit#git_commit=}"
@@ -209,8 +206,8 @@ if [ "$list_type" = "next_step" ]; then
 
       first_task="$(while IFS= read -r line; do
         let line_number=line_number+1
-        if [[ "$line" == TODO\ * ]]; then
-          task="${line#TODO }"
+        if [[ "$line" == NEXTSTEP\ * ]]; then
+          task="${line#NEXTSTEP }"
           echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
           break
         fi
@@ -220,7 +217,7 @@ if [ "$list_type" = "next_step" ]; then
     fi
 
     if [ "$first_task" = "" ]; then
-      echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXT STEP"
+      echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXT NEXTSTEP"
     else
       echo -e "$first_task"
     fi
@@ -256,7 +253,7 @@ if [[ "$list_type" = "file" && $list_steps -eq 1 ]]; then
     file_path_display="${file_path_display%/NEXTSTEP}"
 
     let line_number=line_number+1
-    if [[ "$line" == TODO\ * ]]; then
+    if [[ "$line" == NEXTSTEP\ * ]]; then
       echo -e "\033[36m$line_number:\033[37m$line"
     fi
 
@@ -287,7 +284,7 @@ elif [ "$list_type" = "file" ]; then
     line_number=0
     while IFS= read -r line; do
       let line_number=line_number+1
-      [[ "$line" == TODO\ * ]] && break
+      [[ "$line" == NEXTSTEP\ * ]] && break
     done < "$file_path"
   else
     error "File not found: $file_path"
