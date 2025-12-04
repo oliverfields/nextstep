@@ -217,7 +217,7 @@ if [ "$list_type" = "next_step" ]; then
     fi
 
     if [ "$first_task" = "" ]; then
-      echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXT NEXTSTEP"
+      echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXTSTEP"
     else
       echo -e "$first_task"
     fi
@@ -258,7 +258,7 @@ if [[ "$list_type" = "file" && $list_steps -eq 1 ]]; then
     fi
 
     if [ $line_number -eq 0 ]; then
-      echo -e "\033[36m1:\033[31m⚠️NO NEXT STEP"
+      echo -e "\033[36m1:\033[31m⚠️NO NEXTSTEP"
     fi
 
   done < "$file_path" | fzy --lines=$(($(tput lines)-2)) )"
