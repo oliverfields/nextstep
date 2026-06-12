@@ -18,7 +18,8 @@ show_help() {
   echo "NEXTSTEP rules:"
   echo "  Only files whose name is exactly 'NEXTSTEP' are valid."
   echo "  Ordering is important, both of steps in NEXTSTEP files and paths in tracking file."
-  echo "  A step is a single line of that starts with 'NEXT '"
+  echo "  A step is a single line that starts with 'NEXTSTEP '"
+  echo "  Markdown headings group steps into projects; the default view shows the first step per heading."
   echo ""
   echo "Options:"
   echo "  -e, --edit               Edit the tracking file"
@@ -41,41 +42,73 @@ safe_commit() {
         error "usage: safe_commit <task_file>"
     fi
 
-    # Ensure inside a git repo
-    [ git rev-parse --is-inside-work-tree >/dev/null 2>&1 ] || exit 0
+    # Run every git command against the FILE'S repository, not the directory
+    # nextstep was launched from -- the selected file often lives in a different
+    # repo. Pathspecs are relative to "$dir" (so just the basename); --name-only
+    # output is repo-relative, so "$rel" is used for those comparisons.
+    local dir base rel current_branch STAGED_OTHERS
+    dir="$(cd "$(dirname "$NEXTSTEP_FILE")" 2>/dev/null && pwd)" || exit 0
+    base="$(basename "$NEXTSTEP_FILE")"
 
-    # Ensure no staged changes on other files
-    local STAGED_OTHERS
-    STAGED_OTHERS=$(git diff --cached --name-only | grep -v "^$NEXTSTEP_FILE$" || true)
-    if [ -n "$STAGED_OTHERS" ]; then
-        error "Other files are staged. Commit or stash them first:"
-        echo "$STAGED_OTHERS"
-    fi
+    # Ensure the file is inside a git repo
+    git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
-    # Ensure no staged changes on the task file itself
-    if git diff --cached --name-only | grep -q "^$NEXTSTEP_FILE$"; then
-        error "Task file $NEXTSTEP_FILE has staged changes. Please unstage or commit them manually."
-    fi
-
-    git fetch origin
-    current_branch=$(git rev-parse --abbrev-ref HEAD)
-
-    if ! git diff --quiet "$NEXTSTEP_FILE" "origin/$current_branch"; then
-        error "Remote task file $NEXTSTEP_FILE has changes. Please pull and resolve before committing."
-    fi
-
-    if git diff --quiet "$NEXTSTEP_FILE"; then
+    # Nothing changed in the working tree? Then there's nothing to commit -- opening
+    # a file to read it, or quitting without saving, is a no-op. Bail out here,
+    # before any network access, so browsing stays fast and side-effect free.
+    if git -C "$dir" diff --quiet -- "$base"; then
         return 0
     fi
 
-    if git ls-files -u | grep -q "^$NEXTSTEP_FILE"; then
-        error "$NEXTSTEP_FILE has merge conflicts. Resolve before committing."
+    # Repo-relative path, matching how the file appears in --name-only output
+    rel="$(git -C "$dir" rev-parse --show-prefix)$base"
+
+    # Refuse if the task file is already staged -- let the user handle that manually
+    if git -C "$dir" diff --cached --name-only | grep -qFx "$rel"; then
+        error "Task file $rel has staged changes. Please unstage or commit them manually."
     fi
 
-    git add "$NEXTSTEP_FILE" || error "Unable to git add $NEXTSTEP_FILE"
-    git commit -m "Update NEXTSTEP file $NEXTSTEP_FILE" || error "Unable to git commit $NEXTSTEP_FILE"
-    git push || error "Unable to git push $NEXTSTEP_FILE"
-    echo "NEXTSTEP file $NEXTSTEP_FILE committed and pushed successfully."
+    # Refuse if anything else is staged -- we only want to commit the task file
+    STAGED_OTHERS="$(git -C "$dir" diff --cached --name-only | grep -vFx "$rel" || true)"
+    if [ -n "$STAGED_OTHERS" ]; then
+        error "Other files are staged. Commit or stash them first:\n$STAGED_OTHERS"
+    fi
+
+    git -C "$dir" fetch --quiet origin >/dev/null 2>&1
+    current_branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+
+    # Has the remote moved ahead on this file? Compare our committed version against
+    # the remote branch's version of the same path (revisions before '--', path
+    # after). Working-tree edits are ignored on purpose -- those are what we're about
+    # to commit. Skip if the remote branch doesn't exist yet.
+    if git -C "$dir" rev-parse --verify --quiet "origin/$current_branch" >/dev/null; then
+        if ! git -C "$dir" diff --quiet HEAD "origin/$current_branch" -- "$base"; then
+            error "Remote task file $rel has changes. Please pull and resolve before committing."
+        fi
+    fi
+
+    # Unresolved merge conflict on the file?
+    if [ -n "$(git -C "$dir" ls-files -u -- "$base")" ]; then
+        error "$rel has merge conflicts. Resolve before committing."
+    fi
+
+    git -C "$dir" add -- "$base"                                >/dev/null 2>&1 || error "syncing git: $dir"
+    git -C "$dir" commit --quiet -m "Update NEXTSTEP file $rel" >/dev/null 2>&1 || error "syncing git: $dir"
+    git -C "$dir" push --quiet                                  >/dev/null 2>&1 || error "syncing git: $dir"
+}
+
+# Extract the text of an ATX markdown heading line.
+# Sets `heading_result` and returns 0 if $1 is a heading; returns 1 otherwise.
+parse_heading() {
+  local line="$1"
+  [[ "$line" =~ ^#+[[:space:]]+(.*)$ ]] || return 1
+  local h="${BASH_REMATCH[1]}"
+  # Strip optional CommonMark closing hashes (space-separated, at end of line)
+  [[ "$h" =~ ^(.*[^[:space:]#])[[:space:]]+#+[[:space:]]*$ ]] && h="${BASH_REMATCH[1]}"
+  # Trim trailing whitespace
+  h="${h%"${h##*[![:space:]]}"}"
+  heading_result="$h"
+  return 0
 }
 
 config_file="$HOME/.config/nextstep/config"
@@ -204,14 +237,31 @@ if [ "$list_type" = "next_step" ]; then
 
       file_path_display="${file_path_display%/NEXTSTEP}"
 
-      first_task="$(while IFS= read -r line; do
-        let line_number=line_number+1
-        if [[ "$line" == NEXTSTEP\ * ]]; then
-          task="${line#NEXTSTEP }"
-          echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
-          break
-        fi
-      done < "$file_path")"
+      # One step per heading: emit the first NEXTSTEP after each heading.
+      # A heading section runs until the next heading of any level. Steps before
+      # the first heading form an anonymous section (heading column omitted).
+      # Headings with no step are simply skipped -- completed projects leave
+      # step-less headings behind, and those are not worth listing.
+      first_task="$(
+        last_heading=""
+        emitted=0
+        while IFS= read -r line; do
+          let line_number=line_number+1
+          if parse_heading "$line"; then
+            last_heading="$heading_result"
+            emitted=0
+            continue
+          fi
+          if [[ "$line" == NEXTSTEP\ * && "$emitted" -eq 0 ]]; then
+            task="${line#NEXTSTEP }"
+            if [[ -n "$last_heading" ]]; then
+              echo -e "\033[36m$file_path_display:$line_number:\033[35m$last_heading:\033[37m$task"
+            else
+              echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
+            fi
+            emitted=1
+          fi
+        done < "$file_path")"
     else
       error "File not found: $file_path"
     fi
@@ -242,25 +292,25 @@ fi
 if [[ "$list_type" = "file" && $list_steps -eq 1 ]]; then
   # ---- enforce filename is exactly NEXTSTEP ----
   if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
-    "File must be called NEXTSTEP"
+    error "File must be called NEXTSTEP"
   fi
 
   selection="$(
   line_number=0
+  last_heading=""
   while IFS= read -r line; do
-    [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
-
-    file_path_display="${file_path_display%/NEXTSTEP}"
-
     let line_number=line_number+1
+    if parse_heading "$line"; then
+      last_heading="$heading_result"
+      continue
+    fi
     if [[ "$line" == NEXTSTEP\ * ]]; then
-      echo -e "\033[36m$line_number:\033[37m$line"
+      if [[ -n "$last_heading" ]]; then
+        echo -e "\033[36m$line_number:\033[35m$last_heading:\033[37m$line"
+      else
+        echo -e "\033[36m$line_number:\033[37m$line"
+      fi
     fi
-
-    if [ $line_number -eq 0 ]; then
-      echo -e "\033[36m1:\033[31m⚠️NO NEXTSTEP"
-    fi
-
   done < "$file_path" | fzy --lines=$(($(tput lines)-2)) )"
 
   [ "$selection" = "" ] && exit 0
@@ -294,4 +344,3 @@ elif [ "$list_type" = "file" ]; then
 fi
 
 [ "$git_commit" = "yes" ] && safe_commit "$file_path"
-
