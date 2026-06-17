@@ -37,4 +37,5 @@ let g:status_list = [ 'NEXTSTEP','BLOCKED','DONE','WONT' ]
 
 " Change Status
 nnoremap cs :call NextStepChangeStatus()<CR>
+nnoremap cd :s/^NEXTSTEP/DONE/<CR>
 
