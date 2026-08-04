@@ -216,6 +216,23 @@ if [ ! -f "$tracking_file" ]; then
   error "Projects file not found at $tracking_file"
 fi
 
+# Validate the tracking file before showing the picker. Missing or invalid
+# entries are configuration errors, so fail fast rather than presenting a
+# partially populated list.
+while IFS= read -r file_path; do
+  [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*$ || "$file_path" =~ ^# ]] && continue
+
+  if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
+    error "Invalid entry in tracking file (filename must be exactly 'NEXTSTEP'): $file_path"
+  fi
+
+  if [[ ! -f "$file_path" ]]; then
+    error "Tracked file not found: $file_path
+
+Edit tracker file: nextstep --edit"
+  fi
+done < "$tracking_file"
+
 git_commit="$(grep '^git_commit=' "$config_file")"
 git_commit="${git_commit#git_commit=}"
 
@@ -224,47 +241,42 @@ if [ "$list_type" = "next_step" ]; then
   while IFS= read -r file_path; do
     [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*$ || "$file_path" =~ ^# ]] && continue
 
-
     # ---- enforce filename is exactly NEXTSTEP ----
     if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
       warning "Skipping non-NEXTSTEP file in projects file: $file_path"
       continue
     fi
 
-    if [ -f "$file_path" ]; then
-      line_number=0
-      [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
+    line_number=0
+    [[ "$file_path" =~ ^"$HOME"(/|$) ]] && file_path_display="~${file_path#$HOME}" || file_path_display="$file_path"
 
-      file_path_display="${file_path_display%/NEXTSTEP}"
+    file_path_display="${file_path_display%/NEXTSTEP}"
 
-      # One step per heading: emit the first NEXTSTEP after each heading.
-      # A heading section runs until the next heading of any level. Steps before
-      # the first heading form an anonymous section (heading column omitted).
-      # Headings with no step are simply skipped -- completed projects leave
-      # step-less headings behind, and those are not worth listing.
-      first_task="$(
-        last_heading=""
-        emitted=0
-        while IFS= read -r line; do
-          let line_number=line_number+1
-          if parse_heading "$line"; then
-            last_heading="$heading_result"
-            emitted=0
-            continue
+    # One step per heading: emit the first NEXTSTEP after each heading.
+    # A heading section runs until the next heading of any level. Steps before
+    # the first heading form an anonymous section (heading column omitted).
+    # Headings with no step are simply skipped -- completed projects leave
+    # step-less headings behind, and those are not worth listing.
+    first_task="$(
+      last_heading=""
+      emitted=0
+      while IFS= read -r line; do
+        let line_number=line_number+1
+        if parse_heading "$line"; then
+          last_heading="$heading_result"
+          emitted=0
+          continue
+        fi
+        if [[ "$line" == NEXTSTEP\ * && "$emitted" -eq 0 ]]; then
+          task="${line#NEXTSTEP }"
+          if [[ -n "$last_heading" ]]; then
+            echo -e "\033[36m$file_path_display:$line_number:\033[35m$last_heading:\033[37m$task"
+          else
+            echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
           fi
-          if [[ "$line" == NEXTSTEP\ * && "$emitted" -eq 0 ]]; then
-            task="${line#NEXTSTEP }"
-            if [[ -n "$last_heading" ]]; then
-              echo -e "\033[36m$file_path_display:$line_number:\033[35m$last_heading:\033[37m$task"
-            else
-              echo -e "\033[36m$file_path_display:$line_number:\033[37m$task"
-            fi
-            emitted=1
-          fi
-        done < "$file_path")"
-    else
-      error "File not found: $file_path"
-    fi
+          emitted=1
+        fi
+      done < "$file_path")"
 
     if [ "$first_task" = "" ]; then
       echo -e "\033[36m$file_path_display:1:\033[31m⚠️NO NEXTSTEP"
