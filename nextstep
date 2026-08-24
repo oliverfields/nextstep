@@ -219,15 +219,20 @@ fi
 # Validate the tracking file before showing the picker. Missing or invalid
 # entries are configuration errors, so fail fast rather than presenting a
 # partially populated list.
-while IFS= read -r file_path; do
-  [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*$ || "$file_path" =~ ^# ]] && continue
+#
+# NOTE: this loop uses its own variable ("entry") rather than "file_path".
+# Reusing "file_path" here would clobber the command-line argument (e.g.
+# `nextstep NEXTSTEP`), leaving it set to the loop's leftover value once the
+# read loop finishes -- which then fails the basename check further down.
+while IFS= read -r entry; do
+  [[ -z "$entry" || "$entry" =~ ^[[:space:]]*$ || "$entry" =~ ^# ]] && continue
 
-  if [[ "$(basename "$file_path")" != "NEXTSTEP" ]]; then
-    error "Invalid entry in tracking file (filename must be exactly 'NEXTSTEP'): $file_path"
+  if [[ "$(basename "$entry")" != "NEXTSTEP" ]]; then
+    error "Invalid entry in tracking file (filename must be exactly 'NEXTSTEP'): $entry"
   fi
 
-  if [[ ! -f "$file_path" ]]; then
-    error "Tracked file not found: $file_path
+  if [[ ! -f "$entry" ]]; then
+    error "Tracked file not found: $entry
 
 Edit tracker file: nextstep --edit"
   fi
