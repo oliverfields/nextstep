@@ -8,8 +8,18 @@ augroup END
 func NextStepReplaceStatus(id, result)
   if a:result != -1
     let new_status = get(g:status_list, a:result-1, '')
-    execute 's/\(NEXTSTEP\|BLOCKED\|DONE\|WONT\)/'.new_status.'/'
-    echomsg 'Status changed to '.new_status.' for task on line '.line('.')
+    let line_content = getline('.')
+
+    " Check if the line already contains one of the statuses
+    if line_content =~ '\v(NEXTSTEP|BLOCKED|DONE|WONT)'
+      execute 's/\(NEXTSTEP\|BLOCKED\|DONE\|WONT\)/' . new_status . '/'
+    else
+      " If no status found, prepend the new status (or NEXTSTEP if no selection) to the start of the line
+      let status_to_add = empty(new_status) ? 'NEXTSTEP' : new_status
+      execute 's/^/' . status_to_add . ' /'
+    endif
+
+    echomsg 'Status changed to ' . new_status . ' for task on line ' . line('.')
   endif
 endfunc
 
